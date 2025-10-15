@@ -8,8 +8,7 @@ export const recordBorrowedBook = catchAsyncError(async (req, res, next) => {
   const { id: bookId } = req.params; // Book ID from URL
   const { email, dueDate: suppliedDueDate } = req.body; // Email & optional dueDate from body
 
-  if (!email)
-    return next(new ErrorHandler("User email is required.", 400));
+  if (!email) return next(new ErrorHandler("User email is required.", 400));
 
   // Find user by email
   const user = await User.findOne({ email });
@@ -18,8 +17,7 @@ export const recordBorrowedBook = catchAsyncError(async (req, res, next) => {
 
   // Find book
   const book = await Book.findById(bookId);
-  if (!book)
-    return next(new ErrorHandler("Book not found.", 404));
+  if (!book) return next(new ErrorHandler("Book not found.", 404));
 
   // Check if the user already borrowed this book and hasn’t returned it yet
   const existingBorrow = await Borrow.findOne({
@@ -101,8 +99,7 @@ export const returnBorrowBook = catchAsyncError(async (req, res, next) => {
   const { bookId } = req.params;
   const { email } = req.body;
 
-  if (!email)
-    return next(new ErrorHandler("User email is required.", 400));
+  if (!email) return next(new ErrorHandler("User email is required.", 400));
 
   // Find the user
   const user = await User.findOne({ email });
@@ -118,7 +115,10 @@ export const returnBorrowBook = catchAsyncError(async (req, res, next) => {
 
   if (!borrowRecord)
     return next(
-      new ErrorHandler("No active borrow record found for this user and book.", 404)
+      new ErrorHandler(
+        "No active borrow record found for this user and book.",
+        404
+      )
     );
 
   // Mark borrow record as returned
@@ -134,8 +134,7 @@ export const returnBorrowBook = catchAsyncError(async (req, res, next) => {
 
     // Update borrow history return date
     const history = book.borrowHistory.find(
-      (b) =>
-        b.userId.toString() === user._id.toString() && !b.returnDate
+      (b) => b.userId.toString() === user._id.toString() && !b.returnDate
     );
 
     if (history) history.returnDate = borrowRecord.returnDate;
@@ -160,7 +159,6 @@ export const returnBorrowBook = catchAsyncError(async (req, res, next) => {
     },
   });
 });
-
 
 // Admin: View all borrowed books
 export const getBorrowedBooksForAdmin = catchAsyncError(
@@ -196,5 +194,90 @@ export const borrowedBooks = catchAsyncError(async (req, res, next) => {
     success: true,
     count: userBorrowedBooks.length,
     borrowedBooks: userBorrowedBooks,
+  });
+});
+
+export const getMostBorrowedBooks = catchAsyncError(async (req, res, next) => {
+  // Fetch books sorted by totalBorrowedCount in descending order
+  const books = await Book.find()
+    .sort({ totalBorrowedCount: -1 })
+    .limit(1)
+    .select("title author totalBorrowedCount availability");
+
+  res.status(200).json({
+    success: true,
+    count: books.length,
+    mostBorrowedBooks: books,
+  });
+});
+
+export const getMostActiveMembers = catchAsyncError(async (req, res, next) => {
+  const limit = parseInt(req.query.limit) || 5; // default top 5 members
+
+  // Aggregate borrow count per user
+  const activeMembers = await Borrow.aggregate([
+    {
+      $group: {
+        _id: "$user", // group by user ID
+        totalBorrowed: { $sum: 1 }, // count number of borrows
+      },
+    },
+    { $sort: { totalBorrowed: -1 } }, // most borrowed first
+    { $limit: limit },
+  ]);
+
+  // Populate user details
+  const membersWithDetails = await User.find({
+    _id: { $in: activeMembers.map((m) => m._id) },
+  }).select("name email");
+
+  // Combine count and user details
+  const result = activeMembers.map((member) => {
+    const userDetails = membersWithDetails.find(
+      (u) => u._id.toString() === member._id.toString()
+    );
+    return {
+      _id: member._id,
+      name: userDetails?.name,
+      email: userDetails?.email,
+      totalBorrowed: member.totalBorrowed,
+    };
+  });
+
+  res.status(200).json({
+    success: true,
+    count: result.length,
+    mostActiveMembers: result,
+  });
+});
+
+
+export const getBookAvailabilityReport = catchAsyncError(async (req, res, next) => {
+  // Total books in library (sum of all copies)
+  const totalBooks = await Book.aggregate([
+    {
+      $group: {
+        _id: null,
+        totalCopies: { $sum: "$totalCopies" },
+        borrowedCopies: { $sum: "$totalBorrowedCount" },
+        totalBooksCount: { $sum: 1 } // total book titles
+      },
+    },
+  ]);
+
+  const report = totalBooks[0] || {
+    totalCopies: 0,
+    borrowedCopies: 0,
+    totalBooksCount: 0,
+  };
+
+  res.status(200).json({
+    success: true,
+    report: {
+      totalBooksCount: report.totalBooksCount, // total book titles
+      totalCopies: report.totalCopies + report.borrowedCopies, // total copies including borrowed
+      borrowedCopies: report.borrowedCopies,
+      availableCopies: report.totalCopies, // copies currently available
+    },
   });
 });

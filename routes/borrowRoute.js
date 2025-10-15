@@ -6,6 +6,9 @@ import {
   recordBorrowedBook,
   getBorrowedBooksForAdmin,
   returnBorrowBook,
+  getMostBorrowedBooks,
+  getMostActiveMembers,
+  getBookAvailabilityReport,
 } from "../controllers/borrowController.js";
 import {
   isAuthenticated,
@@ -32,5 +35,25 @@ router.put(
   returnBorrowBook
 );
 
+router.get(
+  "/most-borrowed-book",
+  isAuthenticated,
+  isAuthorized("Admin"),
+  getMostBorrowedBooks
+);
+
+router.get(
+  "/most-active-user",
+  isAuthenticated,
+  isAuthorized("Admin"),
+  getMostActiveMembers
+);
+
+router.get(
+  "/book-avail-report",
+  isAuthenticated,
+  isAuthorized("Admin"),
+  getBookAvailabilityReport
+);
 router.get("/my-borrowed-books", isAuthenticated, borrowedBooks);
 export default router;
